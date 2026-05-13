@@ -33,6 +33,8 @@ export default function Chat({ token, user, onLogout }) {
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatUsername, setNewChatUsername] = useState("");
   const [newChatError, setNewChatError] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   // Presence & typing
   const [onlineUsers, setOnlineUsers] = useState({});
@@ -277,26 +279,71 @@ export default function Chat({ token, user, onLogout }) {
     }
   };
 
-  // ─── New chat ───
-  const startNewChat = async (e) => {
-    e.preventDefault();
-    setNewChatError("");
-    const u = newChatUsername.trim();
-    if (!u) return;
+  // ─── Fetch users for new chat ───
+  const fetchSearchUsers = useCallback(async (query = "") => {
+    setSearchLoading(true);
     try {
-      const peer = await ensurePeerKey(u);
-      const existing = conversations.find((c) => c.peer.id === peer.id);
-      if (existing) { setNewChatOpen(false); setNewChatUsername(""); openConversation(existing); return; }
+      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setSearchResults(await res.json());
+    } catch {} finally { setSearchLoading(false); }
+  }, [token]);
+
+  // Load users when dialog opens
+  useEffect(() => {
+    if (newChatOpen) fetchSearchUsers("");
+  }, [newChatOpen, fetchSearchUsers]);
+
+  // Search users as user types
+  useEffect(() => {
+    if (!newChatOpen) return;
+    const timer = setTimeout(() => fetchSearchUsers(newChatUsername), 300);
+    return () => clearTimeout(timer);
+  }, [newChatUsername, newChatOpen, fetchSearchUsers]);
+
+  const startChatWithUser = async (peer) => {
+    setNewChatError("");
+    try {
+      // Ensure we have peer's public key
+      const peerData = await ensurePeerKey(peer.username);
+      const existing = conversations.find((c) => c.peer.id === peerData.id);
+      if (existing) {
+        setNewChatOpen(false); setNewChatUsername(""); setSearchResults([]);
+        openConversation(existing);
+        return;
+      }
       const optimistic = {
-        id: `pending-${peer.id}`,
-        peer: { id: peer.id, username: peer.username, avatarColor: peer.avatarColor },
+        id: `pending-${peerData.id}`,
+        peer: { id: peerData.id, username: peerData.username, avatarColor: peerData.avatarColor || peer.avatarColor },
         lastMessagePreview: "[Encrypted]", lastAt: null, lastSenderId: null,
       };
       setConversations((prev) => [optimistic, ...prev.filter((c) => c.id !== optimistic.id)]);
       setActiveId(optimistic.id);
       setMessagesByConv((prev) => ({ ...prev, [optimistic.id]: [] }));
-      setNewChatOpen(false); setNewChatUsername(""); setMobilePanel("chat");
-    } catch { setNewChatError("User not found."); }
+      setNewChatOpen(false); setNewChatUsername(""); setSearchResults([]); setMobilePanel("chat");
+    } catch {
+      setNewChatError("Could not start chat with this user.");
+    }
+  };
+
+  const startNewChat = async (e) => {
+    e.preventDefault();
+    const u = newChatUsername.trim();
+    if (!u) return;
+    // Try to find the user from search results first
+    const match = searchResults.find((r) => r.username.toLowerCase() === u.toLowerCase());
+    if (match) {
+      startChatWithUser(match);
+    } else {
+      // Direct username lookup
+      try {
+        const peer = await ensurePeerKey(u);
+        startChatWithUser(peer);
+      } catch {
+        setNewChatError("User not found. Check the username and try again.");
+      }
+    }
   };
 
   // ─── Call functions ───
@@ -412,47 +459,88 @@ export default function Chat({ token, user, onLogout }) {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className={`w-full max-w-md rounded-2xl p-6 ${dark ? "glass-dark glow-border" : "glass-light glow-border"}`}
+              className={`w-full max-w-md rounded-2xl p-6 max-h-[80vh] flex flex-col ${dark ? "glass-dark glow-border" : "glass-light glow-border"}`}
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <UserPlus className={`w-5 h-5 ${dark ? "text-brand-400" : "text-brand-500"}`} />
                   <h2 className={`text-lg font-semibold ${dark ? "text-dark-text" : "text-light-text"}`}>New Chat</h2>
                 </div>
-                <button onClick={() => { setNewChatOpen(false); setNewChatError(""); }}
+                <button onClick={() => { setNewChatOpen(false); setNewChatError(""); setSearchResults([]); }}
                   className={`p-1.5 rounded-lg ${dark ? "hover:bg-dark-hover text-dark-muted" : "hover:bg-light-hover text-light-muted"}`}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <p className={`text-sm mb-4 ${dark ? "text-dark-muted" : "text-light-muted"}`}>
-                Enter the username of the person you want to chat with.
-              </p>
-              <form onSubmit={startNewChat} className="space-y-3">
+
+              {/* Search input */}
+              <form onSubmit={startNewChat} className="mb-3">
                 <input
                   className={`w-full px-4 py-3 rounded-xl text-sm outline-none transition-all ${
                     dark
                       ? "bg-dark-bg/60 border border-dark-border text-dark-text placeholder-dark-muted focus:border-brand-500"
                       : "bg-gray-50 border border-light-border text-light-text placeholder-light-muted focus:border-brand-500"
                   }`}
-                  placeholder="Username"
+                  placeholder="Search by username..."
                   value={newChatUsername}
                   onChange={(e) => setNewChatUsername(e.target.value)}
                   autoFocus
                 />
-                {newChatError && (
-                  <p className="text-xs text-red-400">{newChatError}</p>
-                )}
-                <div className="flex justify-end gap-2 pt-2">
-                  <button type="button" onClick={() => { setNewChatOpen(false); setNewChatError(""); }}
-                    className={`px-4 py-2.5 rounded-xl text-sm ${dark ? "text-dark-muted hover:bg-dark-hover" : "text-light-muted hover:bg-light-hover"}`}>
-                    Cancel
-                  </button>
-                  <button type="submit"
-                    className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-brand-500 to-purple-600 shadow-md shadow-brand-500/20">
-                    Start Chat
-                  </button>
-                </div>
               </form>
+
+              {newChatError && (
+                <p className="text-xs text-red-400 mb-2">{newChatError}</p>
+              )}
+
+              {/* User List */}
+              <div className="flex-1 overflow-y-auto -mx-2 min-h-0">
+                {searchLoading && (
+                  <div className="flex justify-center py-6">
+                    <div className="w-6 h-6 border-2 border-brand-500/30 border-t-brand-500 rounded-full animate-spin" />
+                  </div>
+                )}
+
+                {!searchLoading && searchResults.length === 0 && (
+                  <div className="text-center py-8">
+                    <p className={`text-sm ${dark ? "text-dark-muted" : "text-light-muted"}`}>
+                      {newChatUsername.trim() ? "No users found" : "No other users registered yet"}
+                    </p>
+                    <p className={`text-xs mt-1 ${dark ? "text-dark-muted/60" : "text-light-muted/60"}`}>
+                      Share the link so friends can register!
+                    </p>
+                  </div>
+                )}
+
+                {!searchLoading && searchResults.map((u, i) => (
+                  <motion.button
+                    key={u.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.03 }}
+                    onClick={() => startChatWithUser(u)}
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all ${
+                      dark ? "hover:bg-dark-hover" : "hover:bg-light-hover"
+                    }`}
+                  >
+                    <div
+                      className="w-11 h-11 rounded-full flex items-center justify-center text-white font-medium text-sm shrink-0 shadow-sm"
+                      style={{ background: `linear-gradient(135deg, ${u.avatarColor || "#6366f1"}, #a855f7)` }}
+                    >
+                      {u.username?.charAt(0)?.toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-medium text-sm truncate ${dark ? "text-dark-text" : "text-light-text"}`}>
+                        {u.username}
+                      </p>
+                      <p className={`text-xs ${dark ? "text-dark-muted" : "text-light-muted"}`}>
+                        Tap to start encrypted chat
+                      </p>
+                    </div>
+                    <div className="text-brand-400 shrink-0">
+                      <Shield className="w-4 h-4" />
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
             </motion.div>
           </motion.div>
         )}

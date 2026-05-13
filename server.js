@@ -212,6 +212,37 @@ app.get("/api/users/lookup", authMiddleware, (req, res) => {
   });
 });
 
+/* ─── User Search (partial match) ─── */
+app.get("/api/users/search", authMiddleware, (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (!q) {
+    // Return all users except self
+    const rows = db
+      .prepare(
+        `SELECT id, username, avatar_color FROM users WHERE id != ? ORDER BY username ASC LIMIT 50`
+      )
+      .all(req.user.id);
+    return res.json(rows.map((r) => ({
+      id: r.id,
+      username: r.username,
+      avatarColor: r.avatar_color,
+    })));
+  }
+  const rows = db
+    .prepare(
+      `SELECT id, username, public_key_json, avatar_color FROM users WHERE username LIKE ? AND id != ? COLLATE NOCASE ORDER BY username ASC LIMIT 20`
+    )
+    .all(`%${q}%`, req.user.id);
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      username: r.username,
+      publicKey: JSON.parse(r.public_key_json),
+      avatarColor: r.avatar_color,
+    }))
+  );
+});
+
 /* ─── Conversations ─── */
 app.get("/api/conversations", authMiddleware, (req, res) => {
   const uid = req.user.id;
