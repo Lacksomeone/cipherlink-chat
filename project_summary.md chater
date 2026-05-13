@@ -1,0 +1,105 @@
+# 🔐 CipherLink E2EE Chat — Build Summary
+
+## Status: ✅ Complete & Running
+
+![CipherLink Login UI](C:\Users\Lacks\.gemini\antigravity\brain\f5f2c5ba-3729-4cb1-9644-11ff1cbe9e21\cipherlink_screenshot_1778695255319.webp)
+
+---
+
+## 📁 Project Structure
+
+```
+c:\Users\Lacks\chater\
+├── server.js                          # Express + Socket.io + WebRTC signaling
+├── lib/getOrCreateConversation.js     # DB helper
+├── client/
+│   ├── src/
+│   │   ├── App.jsx                    # Auth screen (glassmorphism)
+│   │   ├── Chat.jsx                   # Main orchestrator
+│   │   ├── crypto.js                  # AES-256-GCM + RSA-OAEP
+│   │   ├── webrtc.js                  # WebRTC P2P call manager
+│   │   ├── context/ThemeContext.jsx    # Dark/Light toggle
+│   │   └── components/
+│   │       ├── Sidebar.jsx            # Chat list + online status
+│   │       ├── ChatWindow.jsx         # Messages + call buttons
+│   │       └── CallOverlay.jsx        # Full-screen call UI
+│   ├── tailwind.config.js             # Custom glassmorphism tokens
+│   └── index.css                      # Glass effects + animations
+├── Dockerfile                         # Multi-stage production build
+├── docker-compose.yml                 # One-click deployment
+├── render.yaml                        # Render.com auto-deploy
+├── .github/workflows/deploy.yml       # CI/CD to Railway/Render
+├── .env.example                       # All environment variables
+└── README.md                          # Full docs + Play Store ASO
+```
+
+## ✨ Features Implemented
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| E2EE Messaging | ✅ | AES-256-GCM + RSA-OAEP key wrapping |
+| WebRTC Video Calls | ✅ | P2P via Socket.io signaling |
+| WebRTC Audio Calls | ✅ | Same P2P infrastructure |
+| Glassmorphism Dark Theme | ✅ | Animated gradients, blur effects |
+| Light Theme | ✅ | Toggle via context |
+| Typing Indicators | ✅ | Real-time via Socket.io |
+| Seen/Delivered Status | ✅ | ✓ sent → ✓✓ delivered → ✓✓ seen (blue) |
+| Online Presence | ✅ | Green dots on avatars |
+| Chat Wallpaper | ✅ | Gradient orbs background |
+| Framer Motion | ✅ | Page transitions, message animations |
+| Lucide Icons | ✅ | Throughout UI |
+| Mobile Responsive | ✅ | WhatsApp-style panel switching |
+| Docker Compose | ✅ | One-click hosting |
+| GitHub Actions | ✅ | Auto-deploy to Railway/Render |
+| README + ASO | ✅ | Full Play Store content |
+
+## 🚀 How to Run
+
+```bash
+# Already running at:
+# Frontend: http://localhost:5173
+# Backend:  http://localhost:3001
+```
+
+## 🌐 How to Deploy
+
+### Option 1: Push to GitHub
+```bash
+cd c:\Users\Lacks\chater
+git init
+git add .
+git commit -m "feat: CipherLink E2EE Chat v2.0"
+gh repo create cipherlink-chat --private --source=. --remote=origin --push
+```
+
+### Option 2: Deploy to Render
+1. Push to GitHub
+2. Go to [render.com](https://render.com) → New Web Service
+3. Connect your repo — it auto-detects `render.yaml`
+
+### Option 3: Docker
+```bash
+docker-compose up -d
+```
+
+## 📞 How WebRTC Calls Work
+
+```mermaid
+sequenceDiagram
+    participant A as User A (Caller)
+    participant S as Socket.io Server
+    participant B as User B (Receiver)
+    
+    A->>S: call:initiate (SDP offer)
+    S->>B: call:incoming (SDP offer)
+    B->>S: call:answer (SDP answer)
+    S->>A: call:answered (SDP answer)
+    A->>S: call:ice-candidate
+    S->>B: call:ice-candidate
+    B->>S: call:ice-candidate
+    S->>A: call:ice-candidate
+    Note over A,B: P2P connection established<br/>Audio/Video goes directly A↔B
+```
+
+> [!IMPORTANT]
+> The server is a **zero-knowledge relay**. It only passes signaling data (SDP offers/answers + ICE candidates). All audio/video streams flow directly between peers.
